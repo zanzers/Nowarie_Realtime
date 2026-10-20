@@ -29,3 +29,10 @@ CLIENT_TIMESTAMP = {
     "content": "Hello Nowarie",
     "timestamp": "2020-01-01T00:00:00Z",
 }
+
+CLIENT_OWN_ID  ={
+    "type": "chat.message",
+    "sender": "user-123",
+    "content": "Hello Nowarie",
+    "id": "my-custom-message-id",
+}
