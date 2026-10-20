@@ -1,10 +1,17 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from app.connection_manager import ConnectionManager
+from pydantic import ValidationError
+from app.schemas.schemas import MessageEvent
+
 
 app = FastAPI(
     title="Nowarie Realtime",
     description="A reusable real-time backend for messaging and future multiplayer applications.",
     version="0.1.0",
 )
+
+manager = ConnectionManager()
+
 
 @app.get("/health")
 async def health_check():
@@ -15,16 +22,34 @@ async def health_check():
     }
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    print("Websocket endpoint reached")
-
-    await websocket.accept()
-    print("Websocket connection accepted.")
+async def websocket_endpoint(websocket: WebSocket, room_id: str):
+   
+    await manager.connect(websocket, room_id)
+    print(f"Client connected to the room {room_id}")
 
     try:
         while True:
-            message = await websocket.receive_text()
-            await websocket.send_text(f"Server received: {message}")
+            try:
+                payload = await websocket.receive_json()
+                message = MessageEvent.model_validate(payload)
+            
+
+            except (ValueError, ValidationError):
+                await websocket.send_json({
+                    "type": "error",
+                    "sender": "user-123",
+                    "content": "Invalid message format.",
+                })
+                continue
+
+            await manager.broadcast(message.model_dump(mode="json"), room_id)
 
     except WebSocketDisconnect:
-        print("Client disconnected.")
+        print(f"Client disconnected from room {room_id}. ")
+
+    finally:
+        manager.disconnection(websocket, room_id)
+
+
+
+ 
