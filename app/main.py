@@ -1,7 +1,7 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from app.connection_manager import ConnectionManager
 from pydantic import ValidationError
-from app.schemas.schemas import MessageEvent
+from app.schemas.schemas import MessageEvent, IncomingMessage
 
 
 app = FastAPI(
@@ -31,7 +31,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
         while True:
             try:
                 payload = await websocket.receive_json()
-                message = MessageEvent.model_validate(payload)
+                incoming = IncomingMessage.model_validate(payload)
+                message = MessageEvent(**incoming.model_dump(),)
             
 
             except (ValueError, ValidationError):
