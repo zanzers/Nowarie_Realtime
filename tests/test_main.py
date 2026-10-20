@@ -1,10 +1,10 @@
+from tests.test_global import GLOBAL_TEST_MESSAGE, INVALID_MESSAGE, INVALID_ERROR, WEBSOCKET_CONNECT_ROOM, CLIENT_TIMESTAMP,CLIENT_OWN_ID
 import asyncio
 from fastapi.testclient import TestClient
 from app.main import app, manager
 from unittest.mock import AsyncMock
 
 from app.connection_manager import ConnectionManager
-from tests.test_global import GLOBAL_TEST_MESSAGE, INVALID_MESSAGE, INVALID_ERROR, WEBSOCKET_CONNECT_ROOM, CLIENT_TIMESTAMP
 
 
 
@@ -33,6 +33,7 @@ def test_websocket_rooms_are_separated():
 
                 assert len( manager.active_connections["conversation-1"]) == 1
                 assert len( manager.active_connections["conversation-2"]) == 1
+
 
 
 def test_websocket_broadcast_within_room():
@@ -135,3 +136,45 @@ def test_websocket_rejects_cliet_timestamp():
 
             assert response["type"] == "error"
             assert response["content"] == "Invalid message format." 
+
+
+
+
+# MESSAGE ID #############################
+
+def test_websocket_generate_server_message_id():
+    with TestClient(app) as client:
+        with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
+            
+            websocket.send_json(GLOBAL_TEST_MESSAGE)
+            response = websocket.receive_json()
+            
+            assert "id" in response
+            assert len(response['id']) == 32
+            assert all(character in "0123456789abcdef" for character in response["id"])
+
+
+def test_websocket_rejects_client_message_id():
+    with TestClient(app) as client:
+        with client.websocket_connect( WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
+        
+            websocket.send_json(CLIENT_OWN_ID)
+            response = websocket.receive_json()
+
+            assert response["type"] == "error"
+            assert response["content"] == "Invalid message format."
+
+
+def test_websocket_generates_unique_message_ids():
+    with TestClient(app) as client:
+        with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
+
+            websocket.send_json(GLOBAL_TEST_MESSAGE)
+            first_response = websocket.receive_json()
+
+            GLOBAL_TEST_MESSAGE["content"] = "Second message"
+
+            websocket.send_json(GLOBAL_TEST_MESSAGE)
+            second_response = websocket.receive_json()
+
+            assert first_response["id"] != second_response["id"]
