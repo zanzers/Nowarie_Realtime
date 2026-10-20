@@ -1,29 +1,23 @@
 # Nowarie Realtime
 
-A reusable real-time backend built with **Python, FastAPI, WebSockets, and PostgreSQL**. Nowarie Realtime is designed to provide a shared backend foundation for messaging systems and future real-time applications.
+A reusable real-time backend built with **Python, FastAPI, WebSockets, and PostgreSQL**. Nowarie Realtime provides a shared foundation for messaging and future real-time applications.
 
-The goal is to build a modular service that can support multiple projects without requiring each project to implement its own real-time communication infrastructure.
+The project starts with room-based WebSocket messaging and will gradually evolve into a reusable real-time service.
 
-## Project Vision
+## Project Goals
 
-Nowarie Realtime begins as a messaging backend and will gradually evolve into a reusable real-time communication service.
-
-The long-term vision is to support applications such as:
-
-* **Messaging:** Real-time conversations and message delivery.
-* **Presence:** Track whether users are online or disconnected.
-* **Rooms:** Organize users into conversations or shared spaces.
-* **Multiplayer:** Exchange real-time player actions and game events.
-* **Shared Infrastructure:** Allow multiple applications to use the same backend.
-
-The initial implementation will focus on reliable WebSocket communication and a foundation that can be extended as requirements grow.
+* **Messaging:** Send real-time messages between connected clients.
+* **Rooms:** Separate conversations and their participants.
+* **Persistence:** Store message history in PostgreSQL.
+* **Reusability:** Provide a shared backend for projects such as Love Journey.
+* **Extensibility:** Prepare for future features such as online presence and multiplayer events.
 
 ## Technology Stack
 
 | Technology     | Purpose                                         |
 | -------------- | ----------------------------------------------- |
 | Python         | Backend programming language                    |
-| FastAPI        | HTTP API and application framework              |
+| FastAPI        | API framework and WebSocket endpoints           |
 | WebSockets     | Real-time, bidirectional communication          |
 | PostgreSQL     | Persistent application data and message history |
 | SQLAlchemy     | Database interaction                            |
@@ -32,76 +26,157 @@ The initial implementation will focus on reliable WebSocket communication and a 
 | Pytest         | Automated testing                               |
 | GitHub Actions | Continuous integration                          |
 
-## Architecture
+Some technologies are planned for upcoming milestones and may not yet be integrated.
 
-The backend is organized into modules so that different real-time features can evolve independently.
+## Current Architecture
 
 ```text
 Client Applications
         |
-        | HTTP / WebSocket
+        | WebSocket
         v
 +---------------------------+
-|     FastAPI Backend       |
+|      FastAPI Server       |
 |                           |
-|  API Endpoints            |
-|  WebSocket Connections    |
-|  Messaging Module         |
-|  Presence Module          |
-|  Rooms Module             |
+|  WebSocket Endpoint       |
+|  Message Validation       |
+|  Server-Generated IDs     |
+|  Server-Generated Time    |
 +---------------------------+
         |
         v
 +---------------------------+
-|       PostgreSQL          |
+|     ConnectionManager     |
 |                           |
-|  Users and Conversations  |
-|  Messages and History     |
-|  Persistent Application   |
-|  Data                     |
+|  Active Connections       |
+|  Room-Based Broadcasts    |
 +---------------------------+
+        |
+        v
+   Connected Clients
 ```
 
-This is the intended architecture. Components will be implemented incrementally as the project develops.
+The current `ConnectionManager` stores active WebSocket connections in memory and broadcasts messages to clients connected to the same room.
 
-### Design Principles
+This architecture is sufficient for the initial small-scale use case of approximately 2–5 users, assuming low traffic and a single server process.
 
-* **Modular:** Keep messaging, presence, and room functionality separated.
-* **Reusable:** Design the backend to serve multiple client applications.
-* **Persistent:** Store messages that users may need to retrieve after disconnecting.
-* **Real-time:** Use WebSockets for low-latency, bidirectional communication.
-* **Practical:** Start with a small deployment and introduce additional infrastructure only when needed.
-* **Testable:** Verify core behavior with automated tests and CI.
+PostgreSQL will provide persistent message history as database integration is implemented.
 
-## Project Structure
+### Important Limitations
+
+* Active connections are stored in server memory.
+* Restarting the server clears the active connection state.
+* Multiple server instances cannot automatically share their WebSocket connections.
+* The connection manager does not persist messages.
+* Client-supplied message IDs and timestamps are not trusted; the server generates these values.
+
+## Connection Manager
+
+**File:** `app/connection_manager.py`
+
+The connection manager is responsible for tracking WebSocket connections and broadcasting messages within rooms.
+
+```python
+from fastapi import WebSocket
+
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: dict[str, list[WebSocket]] = {}
+
+    async def connect(self, websocket: WebSocket, room_id: str):
+        await websocket.accept()
+
+        if room_id not in self.active_connections:
+            self.active_connections[room_id] = []
+
+        self.active_connections[room_id].append(websocket)
+
+    def disconnection(self, websocket: WebSocket, room_id: str):
+        connections = self.active_connections.get(room_id)
+
+        if connections and websocket in connections:
+            connections.remove(websocket)
+
+            if not connections:
+                del self.active_connections[room_id]
+
+    async def broadcast(self, message: str, room_id: str):
+        connections = self.active_connections.get(room_id, [])
+
+        for connection in connections.copy():
+            try:
+                await connection.send_json(message)
+            except Exception:
+                self.disconnection(connection, room_id)
+```
+
+### Method Responsibilities
+
+| Method            | Responsibility                                                   |
+| ----------------- | ---------------------------------------------------------------- |
+| `connect()`       | Accepts a WebSocket connection and registers it in a room.       |
+| `disconnection()` | Removes a connection and deletes an empty room entry.            |
+| `broadcast()`     | Sends a JSON message to connected clients in the specified room. |
+
+The broadcast method iterates over a copy of the connection list so connections can be removed safely during iteration.
+
+**Implementation note:** The `broadcast()` parameter is currently annotated as `str`, although `send_json()` accepts JSON-compatible values, including dictionaries. Consider updating this annotation when refining the implementation.
+
+## Future Development: Redis Pub/Sub
+
+**Status:** Planned. Redis is not currently implemented.
+
+Redis will be considered when the application needs to distribute real-time events across multiple FastAPI server instances.
+
+### Where Redis Will Be Added
+
+The main integration points will be:
+
+* `app/connection_manager.py` — retain responsibility for local WebSocket connections and local broadcasts.
+* `app/main.py` — integrate message publishing into the WebSocket message-handling flow.
+* A future dedicated Redis service module — manage Redis connections, publishing, and subscriptions.
+
+The intended architecture is:
 
 ```text
-nowarie-realtime/
-├── .github/
-│   └── workflows/
-│       └── ci.yml
-├── .scripts/
-│   └── ship.ps1
-├── app/
-│   ├── api/
-│   ├── core/
-│   ├── db/
-│   ├── modules/
-│   │   ├── messaging/
-│   │   ├── presence/
-│   │   └── rooms/
-│   ├── services/
-│   ├── websocket/
-│   ├── __init__.py
-│   └── main.py
-├── tests/
-├── .env.example
-├── .gitignore
-├── README.md
-└── requirements.txt
+              Client A                 Client B
+                 |                         ^
+                 v                         |
+            FastAPI A                 FastAPI B
+                 |                         ^
+                 v                         |
+          Local Connections          Local Connections
+                 |                         ^
+                 v                         |
+             Redis Pub/Sub ---------------+
+                 |
+                 v
+          Shared Real-Time Events
 ```
 
-The structure represents the planned organization. Some directories may remain empty until their corresponding features are implemented.
+Conceptually, when a client sends a message to one server, that server publishes the event to Redis. Other server instances subscribe to the event and deliver it to their own connected clients.
+
+The actual implementation must also handle room filtering, event routing, and duplicate-delivery prevention.
+
+### Future Developer Instructions
+
+When implementing Redis:
+
+1. Add a Redis-compatible client dependency.
+2. Configure the Redis connection through environment variables.
+3. Create a dedicated Redis service module rather than placing all Redis logic inside `ConnectionManager`.
+4. Publish validated message events to Redis channels.
+5. Subscribe each server instance to relevant events.
+6. Deliver received events through each instance's local WebSocket connections.
+7. Manage Redis connections and subscription tasks during application startup and shutdown.
+8. Add tests for event distribution, room isolation, connection failures, and duplicate delivery.
+
+**Keep Redis separate from PostgreSQL.**
+
+Redis Pub/Sub distributes real-time events but does not retain messages for disconnected subscribers. PostgreSQL should remain responsible for persistent message history. A reconnecting client should retrieve missed messages from persistent storage.
+
+Redis is not necessary for the initial single-server implementation. Documenting this integration point keeps the current system simple while making future scaling easier.
 
 ## Getting Started
 
@@ -110,7 +185,8 @@ The structure represents the planned organization. Some directories may remain e
 * Python 3.12 or a compatible supported Python version
 * Git
 * PowerShell on Windows, or an equivalent terminal
-* PostgreSQL when database integration is introduced
+
+PostgreSQL will be required when database integration is implemented.
 
 ### 1. Clone the Repository
 
@@ -147,94 +223,103 @@ DATABASE_URL=
 
 Database configuration will be completed when PostgreSQL integration is implemented.
 
-**Never commit `.env` or credentials to the repository.**
+**Never commit `.env` files or credentials to the repository.**
 
 ### 5. Run the Development Server
 
-Once the initial FastAPI application is implemented:
+From the project root:
 
 ```powershell
 python -m uvicorn app.main:app --reload
 ```
 
-The API documentation will be available at:
+Open the API documentation at:
 
-```text
-http://127.0.0.1:8000/docs
+`http://127.0.0.1:8000/docs`
+
+## Testing
+
+Run the complete test suite with coverage:
+
+```powershell
+python -m pytest --cov=app --cov-report=term-missing -v
 ```
+
+This command runs the tests with verbose output and reports application code coverage, including lines that were not executed.
+
+Review failed tests and uncovered lines before shipping a change.
 
 ## Development Workflow
 
 The project uses a pull-request-based workflow.
 
 1. Start from the latest `main` branch.
-2. Create a feature branch.
-3. Implement a focused change.
-4. Run tests locally.
-5. Use `.scripts/ship.ps1` to create a pull request.
-6. Let GitHub Actions run CI.
-7. Review the pull request and merge when checks pass.
+2. Make sure the working tree contains only the intended changes.
+3. Use the shipping script to create a feature branch and pull request.
+4. Review the staged files and commit.
+5. Allow GitHub Actions to run CI.
+6. Review and merge the pull request after checks pass.
 
-Example:
+### Ship a Feature
+
+The current server-generated message IDs milestone uses:
 
 ```powershell
-.\.scripts\ship.ps1 "feat: add websocket connection"
+.scripts\ship "feat: add server-generated message IDs"
 ```
 
-The script automates branch creation, committing, pushing, pull-request creation, and the merge workflow.
+The script automates branch creation, committing, pushing, pull-request creation, CI checks, and the merge workflow.
+
+**Important:** The script stages changes using `git add .`. Inspect the staged files and ensure unrelated changes are not included before allowing the workflow to continue.
 
 ## Roadmap
 
-### Phase 1 — Foundation
+### Phase 1 — WebSocket Foundation
 
-* [ ] Initialize the FastAPI application.
-* [ ] Add an HTTP health endpoint.
-* [ ] Implement a basic WebSocket endpoint.
-* [ ] Add automated tests.
-* [ ] Configure GitHub Actions CI.
+* [x] Initialize the FastAPI application.
+* [x] Add an HTTP health endpoint.
+* [x] Implement a WebSocket endpoint.
+* [x] Implement room-based connection management.
+* [x] Add automated tests and CI.
 
 ### Phase 2 — Messaging
 
-* [ ] Define the message protocol.
-* [ ] Support sending and receiving messages.
-* [ ] Design conversations and message persistence.
+* [x] Define an incoming message schema.
+* [x] Validate incoming messages.
+* [x] Generate message timestamps on the server.
+* [x] Generate unique message IDs on the server.
+* [x] Broadcast messages within a room.
+* [ ] Implement PostgreSQL message persistence.
 * [ ] Retrieve message history.
-* [ ] Handle disconnected clients.
 
-### Phase 3 — Users and Presence
+### Phase 3 — Identity and Reliability
 
-* [ ] Define user identity and authentication.
-* [ ] Track active WebSocket connections.
-* [ ] Handle connection and disconnection events.
-* [ ] Support conversation or room membership.
+* [ ] Implement authentication and trusted user identity.
+* [ ] Authorize room membership.
+* [ ] Improve connection lifecycle and error handling.
+* [ ] Handle reconnecting clients and missed messages.
 
-### Phase 4 — Reusable Real-Time Infrastructure
+### Phase 4 — Shared Real-Time Infrastructure
 
-* [ ] Define a consistent event protocol.
-* [ ] Support multiple client applications.
-* [ ] Separate transport handling from application logic.
-* [ ] Add authorization and input validation.
+* [ ] Separate messaging logic from transport handling where appropriate.
+* [ ] Introduce Redis Pub/Sub when cross-instance event distribution is needed.
+* [ ] Add online presence and typing indicators if required.
 
-### Phase 5 — Multiplayer Support
-
-* [ ] Define player and room events.
-* [ ] Support events such as player movement and interaction.
-* [ ] Evaluate state synchronization requirements.
-* [ ] Integrate with a multiplayer client.
-
-### Phase 6 — Deployment and Reliability
+### Phase 5 — Deployment
 
 * [ ] Configure production environment variables.
 * [ ] Deploy the API.
-* [ ] Connect a managed PostgreSQL database.
-* [ ] Add logging and operational health checks.
-* [ ] Evaluate a message broker if scaling requirements justify it.
+* [ ] Connect persistent PostgreSQL storage.
+* [ ] Add operational logging and monitoring.
+* [ ] Evaluate hosting costs and reliability before production use.
 
 ## Current Status
 
-**Status:** Initial development.
+**Status:** Initial real-time messaging implementation.
 
-The project is being built incrementally, beginning with the application foundation and WebSocket communication. Roadmap items are planned work, not claims that the features are already implemented.
+The project currently focuses on room-based WebSocket communication, message validation, server-generated message IDs and timestamps, and automated testing.
+
+PostgreSQL persistence and Redis integration remain future milestones.
 
 ## License
 
