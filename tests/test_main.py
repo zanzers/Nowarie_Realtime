@@ -4,7 +4,7 @@ from app.main import app, manager
 from unittest.mock import AsyncMock
 
 from app.connection_manager import ConnectionManager
-from tests.test_global import GLOBAL_TEST_MESSAGE, INVALID_MESSAGE, INVALID_ERROR, WEBSOCKET_CONNECT_ROOM
+from tests.test_global import GLOBAL_TEST_MESSAGE, INVALID_MESSAGE, INVALID_ERROR, WEBSOCKET_CONNECT_ROOM, CLIENT_TIMESTAMP
 
 
 
@@ -107,5 +107,31 @@ def test_websocket_rejects_invalid_message():
 
             assert response == INVALID_ERROR
 
+# TIMESTAMP #####################################################
 
-    
+def test_websocket_generates_server_timestamp():
+    with TestClient(app) as client:
+        with client.websocket_connect(
+            WEBSOCKET_CONNECT_ROOM["validation-test"]
+        ) as websocket:
+   
+            websocket.send_json(GLOBAL_TEST_MESSAGE)
+            response = websocket.receive_json()
+
+            assert response["type"] == GLOBAL_TEST_MESSAGE["type"]
+            assert response["sender"] == GLOBAL_TEST_MESSAGE["sender"]
+            assert response["content"] == GLOBAL_TEST_MESSAGE["content"]
+            assert "timestamp" in response
+            assert response["timestamp"].endswith("+00:00") or response["timestamp"].endswith("Z")
+
+
+
+def test_websocket_rejects_cliet_timestamp():
+    with TestClient(app) as client:
+        with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
+        
+            websocket.send_json(CLIENT_TIMESTAMP)
+            response = websocket.receive_json()
+
+            assert response["type"] == "error"
+            assert response["content"] == "Invalid message format." 
