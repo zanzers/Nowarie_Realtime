@@ -1,8 +1,13 @@
+import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from app.connection_manager import ConnectionManager
 from pydantic import ValidationError
-from app.schemas.schemas import MessageEvent, IncomingMessage
 
+from app.lib.lib_Main import savedMessage
+from app.connection_manager import ConnectionManager
+from app.db.schemas.schemas import MessageEvent, IncomingMessage
+
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Nowarie Realtime",
@@ -25,7 +30,7 @@ async def health_check():
 async def websocket_endpoint(websocket: WebSocket, room_id: str):
    
     await manager.connect(websocket, room_id)
-    print(f"Client connected to the room {room_id}")
+    logging.info("Client connected to room %s", room_id)
 
     try:
         while True:
@@ -43,10 +48,10 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 })
                 continue
 
-            await manager.broadcast(message.model_dump(mode="json"), room_id)
+            await savedMessage(websocket, message, room_id, manager)
 
     except WebSocketDisconnect:
-        print(f"Client disconnected from room {room_id}. ")
+        logger.info("Client disconnected from room %s ", room_id)
 
     finally:
         manager.disconnection(websocket, room_id)
