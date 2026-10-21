@@ -36,3 +36,12 @@ CLIENT_OWN_ID  ={
     "content": "Hello Nowarie",
     "id": "my-custom-message-id",
 }
+
+ERROR_MESSAGE = {
+    "type": "error", 
+    "code": "message_persistence_failed", 
+    "content": ( 
+        "Message could not be saved.",
+        "Please try sending it again." 
+    ),
+}

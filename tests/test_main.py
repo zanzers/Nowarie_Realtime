@@ -8,8 +8,6 @@ from app.connection_manager import ConnectionManager
 
 
 
-
-
 def test_health_check():
     with TestClient(app) as client:
         response = client.get("/health")
