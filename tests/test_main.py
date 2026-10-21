@@ -1,8 +1,8 @@
-from tests.test_global import GLOBAL_TEST_MESSAGE, INVALID_MESSAGE, INVALID_ERROR, WEBSOCKET_CONNECT_ROOM, CLIENT_TIMESTAMP,CLIENT_OWN_ID
+from tests.test_global import GLOBAL_TEST_MESSAGE, INVALID_MESSAGE, INVALID_ERROR, WEBSOCKET_CONNECT_ROOM, CLIENT_TIMESTAMP,CLIENT_OWN_ID,ERROR_MESSAGE
 import asyncio
 from fastapi.testclient import TestClient
 from app.main import app, manager
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from app.connection_manager import ConnectionManager
 
@@ -53,6 +53,22 @@ def test_websocket_broadcast_within_room():
 
                 assert response_b == response_a
                 
+def test_websocket_does_not_broadcast_when_persistence_fails():
+
+    with patch("app.lib.lib_Main.persist_message_with_retry", new_callable=AsyncMock, return_value=False), patch("app.connection_manager.ConnectionManager.broadcast", new_callable=AsyncMock) as broadcast:
+        with TestClient(app) as client:
+            with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-1"]) as websocket_a:
+                with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-1"]) as websocket_b:
+
+                    websocket_a.send_json(GLOBAL_TEST_MESSAGE)
+
+                    error = websocket_a.receive_json()
+                    expected_error = {**ERROR_MESSAGE, "content": list(ERROR_MESSAGE["content"])}
+
+                    assert error == expected_error
+
+                    broadcast.assert_not_awaited()
+
 
 
 def test_broadcast_removes_failed_connection():
@@ -170,9 +186,12 @@ def test_websocket_generates_unique_message_ids():
             websocket.send_json(GLOBAL_TEST_MESSAGE)
             first_response = websocket.receive_json()
 
-            GLOBAL_TEST_MESSAGE["content"] = "Second message"
+            second_message = {
+                **GLOBAL_TEST_MESSAGE, 
+                "content": "Second message",
+            }
 
-            websocket.send_json(GLOBAL_TEST_MESSAGE)
+            websocket.send_json(second_message)
             second_response = websocket.receive_json()
 
             assert first_response["id"] != second_response["id"]
