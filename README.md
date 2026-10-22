@@ -289,8 +289,8 @@ The script automates branch creation, committing, pushing, pull-request creation
 * [x] Generate message timestamps on the server.
 * [x] Generate unique message IDs on the server.
 * [x] Broadcast messages within a room.
-* [ ] Implement PostgreSQL message persistence.
-* [ ] Retrieve message history.
+* [x] Implement PostgreSQL message persistence.
+* [x] Retrieve message history.
 
 ### Phase 3 — Identity and Reliability
 
