@@ -7,7 +7,7 @@ from app.db.schemas.schemas import MessageEvent
 from tests.test_global import GLOBAL_TEST_MESSAGE
 
 @pytest.fixture
-def message(): return MessageEvent(**GLOBAL_TEST_MESSAGE)
+def message(): return MessageEvent(**GLOBAL_TEST_MESSAGE, sender="user-123")
 
 @pytest.mark.asyncio
 async def test_message_persisted_succeeds_on_first_attempt(message):
@@ -16,7 +16,6 @@ async def test_message_persisted_succeeds_on_first_attempt(message):
         result = await persist_message_with_retry(message, "conversation-1")
         assert result is True
         save.assert_awaited_once()
-
 
 @pytest.mark.asyncio
 async def test_persisted_retries_and_then_succeeds(message):

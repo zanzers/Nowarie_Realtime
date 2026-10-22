@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 @pytest.fixture
 def message():
-    return MessageEvent(**GLOBAL_TEST_MESSAGE)
+    return MessageEvent(**GLOBAL_TEST_MESSAGE, sender="user-123")
 
 
 

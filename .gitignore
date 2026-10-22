@@ -8,3 +8,5 @@ __pycache__/
 !.env.example
 .uvicorn/
 .coverage
+app/lib/test_private.pem
+app/lib/test_public.pem

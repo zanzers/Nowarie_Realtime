@@ -9,7 +9,7 @@ from app.db.message_delivery import persist_message_with_retry
 
 
 @pytest.fixture
-def message(): return MessageEvent(**GLOBAL_TEST_MESSAGE)
+def message(): return MessageEvent(**GLOBAL_TEST_MESSAGE, sender="sender-123")
 
 @pytest.mark.asyncio
 async def test_saved_message_broadcasts_after_success(message):
