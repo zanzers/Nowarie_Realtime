@@ -1,10 +1,11 @@
 import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from pydantic import ValidationError
 
 from app.lib.lib_Main import savedMessage
 from app.connection_manager import ConnectionManager
 from app.db.schemas.schemas import MessageEvent, IncomingMessage
+from app.db.message_repository import get_messages
 
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,18 @@ async def health_check():
         "service": "nowarie-realtime",
         "version":"0.1.0"
     }
+
+@app.get("/rooms/{room_id}/messages")
+async def get_room_messages(room_id: str, limit: int = Query(default=50, ge=1, le=100)):
+    messages = get_messages(room_id, limit)
+    return {
+        "room_id": room_id,
+        "messages": messages,
+    }
+
+
+
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, room_id: str):

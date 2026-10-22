@@ -32,8 +32,6 @@ def test_websocket_rooms_are_separated():
                 assert len( manager.active_connections["conversation-1"]) == 1
                 assert len( manager.active_connections["conversation-2"]) == 1
 
-
-
 def test_websocket_broadcast_within_room():
     with TestClient(app) as client:
         with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-1"]) as websocket_a:
@@ -69,8 +67,6 @@ def test_websocket_does_not_broadcast_when_persistence_fails():
 
                     broadcast.assert_not_awaited()
 
-
-
 def test_broadcast_removes_failed_connection():
     manager = ConnectionManager()
 
@@ -91,7 +87,6 @@ def test_broadcast_removes_failed_connection():
 
     health_connection.send_json.assert_awaited_once_with(message)
 
-
 def test_broadcast_does_not_send_to_other_rooms():
 
     manager = ConnectionManager()
@@ -111,7 +106,6 @@ def test_broadcast_does_not_send_to_other_rooms():
     client_a.send_json.assert_awaited_once_with(message)
     client_b.send_json.assert_awaited_once_with(message)
     client_c.send_json.assert_not_awaited()
-
 
 def test_websocket_rejects_invalid_message():
     with TestClient(app) as client:
@@ -139,8 +133,6 @@ def test_websocket_generates_server_timestamp():
             assert "timestamp" in response
             assert response["timestamp"].endswith("+00:00") or response["timestamp"].endswith("Z")
 
-
-
 def test_websocket_rejects_cliet_timestamp():
     with TestClient(app) as client:
         with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
@@ -150,8 +142,6 @@ def test_websocket_rejects_cliet_timestamp():
 
             assert response["type"] == "error"
             assert response["content"] == "Invalid message format." 
-
-
 
 
 # MESSAGE ID #############################
@@ -167,7 +157,6 @@ def test_websocket_generate_server_message_id():
             assert len(response['id']) == 32
             assert all(character in "0123456789abcdef" for character in response["id"])
 
-
 def test_websocket_rejects_client_message_id():
     with TestClient(app) as client:
         with client.websocket_connect( WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
@@ -177,7 +166,6 @@ def test_websocket_rejects_client_message_id():
 
             assert response["type"] == "error"
             assert response["content"] == "Invalid message format."
-
 
 def test_websocket_generates_unique_message_ids():
     with TestClient(app) as client:
@@ -195,3 +183,49 @@ def test_websocket_generates_unique_message_ids():
             second_response = websocket.receive_json()
 
             assert first_response["id"] != second_response["id"]
+
+
+#  TEST MESSAGE ENDPOINT ###################
+
+def test_get_room_messages_uses_requested_room():
+    with patch("app.main.get_messages", return_value=[]) as mock_get_messages:
+        with TestClient(app) as client:
+            response = client.get("/rooms/conversation-2/messages?limit=20")
+        
+    assert response.status_code == 200
+    mock_get_messages.assert_called_once_with(
+        "conversation-2",
+        20,
+    )
+
+def test_get_room_messages_return_history():
+    with patch("app.main.get_messages", return_value=[]) as mock_get_messages:
+        with TestClient(app) as client:
+            response = client.get("/rooms/conversation-1/messages")
+    
+    assert response.status_code == 200
+    assert response.json() == {
+        "room_id": "conversation-1",
+        "messages": [],
+    }
+    mock_get_messages.assert_called_once_with("conversation-1", 50)
+
+def test_get_room_messages_respects_limit():
+    with patch("app.main.get_messages", return_value=[], ) as mock_get_messages:
+        with TestClient(app) as client:
+            response = client.get("/rooms/conversation-1/messages?limit=10")
+    
+    print("Status:", response.status_code)
+    print("Status:", response.json())
+    
+    assert response.status_code == 200
+    mock_get_messages.assert_called_once_with(
+        "conversation-1",
+        10,
+    )
+    
+def test_get_room_messages_rejects_invalid_limit():
+    with TestClient(app) as client:
+        response = client.get("/rooms/conversation-1/messages?limit=0")
+    assert response.status_code == 422
+
