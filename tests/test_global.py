@@ -1,17 +1,16 @@
 GLOBAL_TEST_MESSAGE = {
     "type": "chat.message",
-    "sender": "user-123",
     "content": "Hello nowarie"
 }
 
 INVALID_MESSAGE = {
     "type": "chat.message",
-    "content": "Invalid message format.",
+    "content": "",
 }
 
 INVALID_ERROR = {
     "type": "error",
-    "sender": "user-123",
+    "code": "invalid_message",
     "content": "Invalid message format.",
 }
 

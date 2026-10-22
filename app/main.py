@@ -5,6 +5,8 @@ from pydantic import ValidationError
 from app.lib.lib_Main import savedMessage
 from app.connection_manager import ConnectionManager
 from app.db.schemas.schemas import MessageEvent, IncomingMessage
+from app.core.config import ( JWT_PUBLIC_KEY, JWT_ISSUER, JWT_AUDIENCE )
+from app.core.security import ( AuthenticationError, verify_access_token )
 from app.db.message_repository import get_messages
 
 
@@ -41,22 +43,47 @@ async def get_room_messages(room_id: str, limit: int = Query(default=50, ge=1, l
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, room_id: str):
-   
+
+    token = websocket.cookies.get("access_token")
+
+    if not token:
+        await websocket.close(
+            code=1008, 
+            reason="Authentication required.")
+        return
+    
+    if not JWT_PUBLIC_KEY or not JWT_ISSUER or not JWT_AUDIENCE:
+        logger.error("JTW configuration is missing.")
+        await websocket.close(
+            code=1011,
+            reason="Server configuration error.")
+        return
+    
+    try:
+        claims = verify_access_token(token, public_key=JWT_PUBLIC_KEY, issuer=JWT_ISSUER, audience=JWT_AUDIENCE)
+    except AuthenticationError as exc:
+        logger.warning("Authentication error: %s", exc)
+        await websocket.close(code=1008, reason="Invalid access token.")
+        return
+    
+    authenticated_user_id = claims["sub"]
     await manager.connect(websocket, room_id)
-    logging.info("Client connected to room %s", room_id)
+    logger.info("Authenticated use %s connected to room %s", authenticated_user_id, room_id)
+
+
 
     try:
         while True:
             try:
                 payload = await websocket.receive_json()
                 incoming = IncomingMessage.model_validate(payload)
-                message = MessageEvent(**incoming.model_dump(),)
+                message = MessageEvent(**incoming.model_dump(),sender=authenticated_user_id)
             
 
             except (ValueError, ValidationError):
                 await websocket.send_json({
                     "type": "error",
-                    "sender": "user-123",
+                    "code": "invalid_message",
                     "content": "Invalid message format.",
                 })
                 continue
@@ -64,7 +91,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
             await savedMessage(websocket, message, room_id, manager)
 
     except WebSocketDisconnect:
-        logger.info("Client disconnected from room %s ", room_id)
+        logger.info("User %s disconnected from room %s ",authenticated_user_id, room_id)
 
     finally:
         manager.disconnection(websocket, room_id)

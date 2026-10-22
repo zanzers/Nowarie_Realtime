@@ -1,12 +1,45 @@
-from tests.test_global import GLOBAL_TEST_MESSAGE, INVALID_MESSAGE, INVALID_ERROR, WEBSOCKET_CONNECT_ROOM, CLIENT_TIMESTAMP,CLIENT_OWN_ID,ERROR_MESSAGE
+import jwt
+import pytest
 import asyncio
-from fastapi.testclient import TestClient
+from pathlib import Path
 from app.main import app, manager
+from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, patch
-
+from datetime import datetime, timedelta, timezone
 from app.connection_manager import ConnectionManager
+from starlette.websockets import WebSocketDisconnect
+from tests.test_global import GLOBAL_TEST_MESSAGE, INVALID_MESSAGE, INVALID_ERROR, WEBSOCKET_CONNECT_ROOM, CLIENT_TIMESTAMP,CLIENT_OWN_ID,ERROR_MESSAGE
 
 
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+# TEST TOKEN ################################
+
+def create_test_token():
+    private_key = ( PROJECT_ROOT / "app" / "lib" / "test_private.pem").read_text(encoding="utf-8")
+    now = datetime.now(timezone.utc)
+
+    return jwt.encode(
+        {
+            "sub" : "user-123",
+            "iss" : "nowarie-test",
+            "aud" : "nowarie-realtime",
+            "iat" : now,
+            "exp" : now + timedelta(minutes=15)
+        },
+        private_key,
+        algorithm="RS256",
+    )
+
+def create_authenticated_client():
+    client = TestClient(app)
+    token = create_test_token()
+    client.cookies.set("access_token", token)
+    return client
+
+def create_unauthenticated_client():
+    return TestClient(app)
 
 def test_health_check():
     with TestClient(app) as client:
@@ -22,18 +55,32 @@ def test_health_check():
 
 
 def test_websocket_rooms_are_separated():
-    with TestClient(app) as client:
+    with create_authenticated_client() as client:
         with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-1"]) as websocket_a: 
             with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-2"]) as websocket_b:
 
-                assert "conversation-1" in manager.active_connections
-                assert "conversation-2" in manager.active_connections
+                websocket_a.send_json(GLOBAL_TEST_MESSAGE)
+                response_a = websocket_a.receive_json()
 
-                assert len( manager.active_connections["conversation-1"]) == 1
-                assert len( manager.active_connections["conversation-2"]) == 1
+                assert response_a["type"] == GLOBAL_TEST_MESSAGE["type"]
+                assert response_a["sender"] == "user-123"
+                assert response_a["content"] == GLOBAL_TEST_MESSAGE["content"]
+
+                websocket_b.send_json({
+                    "type": "chat.message",
+                    "content": "Message from conversation-2"
+                })
+                response_b = websocket_b.receive_json()
+
+                assert response_b["content"] == "Message from conversation-2"
+                assert response_b["sender"] == "user-123"
 
 def test_websocket_broadcast_within_room():
     with TestClient(app) as client:
+
+        token = create_test_token()
+        client.cookies.set("access_token", token)
+
         with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-1"]) as websocket_a:
             with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-1"]) as websocket_b:
                 
@@ -45,16 +92,15 @@ def test_websocket_broadcast_within_room():
                 response_b = websocket_b.receive_json()
 
                 assert response_a["type"] == GLOBAL_TEST_MESSAGE["type"]
-                assert response_a["sender"] == GLOBAL_TEST_MESSAGE["sender"]
+                assert response_a["sender"] == "user-123"
                 assert response_a["content"] == GLOBAL_TEST_MESSAGE["content"]
                 assert "timestamp" in response_a
-
                 assert response_b == response_a
-                
+             
 def test_websocket_does_not_broadcast_when_persistence_fails():
 
     with patch("app.lib.lib_Main.persist_message_with_retry", new_callable=AsyncMock, return_value=False), patch("app.connection_manager.ConnectionManager.broadcast", new_callable=AsyncMock) as broadcast:
-        with TestClient(app) as client:
+        with create_authenticated_client() as client:
             with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-1"]) as websocket_a:
                 with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-1"]) as websocket_b:
 
@@ -108,7 +154,7 @@ def test_broadcast_does_not_send_to_other_rooms():
     client_c.send_json.assert_not_awaited()
 
 def test_websocket_rejects_invalid_message():
-    with TestClient(app) as client:
+    with create_authenticated_client() as client:
         with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
             websocket.send_json(INVALID_MESSAGE)
 
@@ -116,10 +162,40 @@ def test_websocket_rejects_invalid_message():
 
             assert response == INVALID_ERROR
 
+def test_websocket_rejects_missing_token():
+    with create_unauthenticated_client() as client:
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]):
+                pass
+    
+    assert exc_info.value.code == 1008
+    assert exc_info.value.reason == "Authentication required."
+       
+def test_websocket_rejects_connection_when_jwt_config_is_missing(monkeypatch):
+    monkeypatch.setattr("app.main.JWT_PUBLIC_KEY", None)
+
+    with create_authenticated_client() as client:
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]):
+                pass
+
+        assert exc_info.value.code == 1011
+        assert exc_info.value.reason == "Server configuration error."
+
+def test_websocket_rejects_invalid_token():
+    with create_unauthenticated_client() as client:
+        client.cookies.set("access_token", "invalid.jwt.token")
+
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]):
+                pass
+        assert exc_info.value.code == 1008
+        assert exc_info.value.reason == "Invalid access token."
+
 # TIMESTAMP #####################################################
 
 def test_websocket_generates_server_timestamp():
-    with TestClient(app) as client:
+    with create_authenticated_client() as client:
         with client.websocket_connect(
             WEBSOCKET_CONNECT_ROOM["validation-test"]
         ) as websocket:
@@ -128,13 +204,13 @@ def test_websocket_generates_server_timestamp():
             response = websocket.receive_json()
 
             assert response["type"] == GLOBAL_TEST_MESSAGE["type"]
-            assert response["sender"] == GLOBAL_TEST_MESSAGE["sender"]
+            assert response["sender"] == "user-123"
             assert response["content"] == GLOBAL_TEST_MESSAGE["content"]
             assert "timestamp" in response
             assert response["timestamp"].endswith("+00:00") or response["timestamp"].endswith("Z")
 
 def test_websocket_rejects_cliet_timestamp():
-    with TestClient(app) as client:
+    with create_authenticated_client() as client:
         with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
         
             websocket.send_json(CLIENT_TIMESTAMP)
@@ -147,7 +223,7 @@ def test_websocket_rejects_cliet_timestamp():
 # MESSAGE ID #############################
 
 def test_websocket_generate_server_message_id():
-    with TestClient(app) as client:
+    with create_authenticated_client() as client:
         with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
             
             websocket.send_json(GLOBAL_TEST_MESSAGE)
@@ -158,7 +234,7 @@ def test_websocket_generate_server_message_id():
             assert all(character in "0123456789abcdef" for character in response["id"])
 
 def test_websocket_rejects_client_message_id():
-    with TestClient(app) as client:
+    with create_authenticated_client() as client:
         with client.websocket_connect( WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
         
             websocket.send_json(CLIENT_OWN_ID)
@@ -168,7 +244,7 @@ def test_websocket_rejects_client_message_id():
             assert response["content"] == "Invalid message format."
 
 def test_websocket_generates_unique_message_ids():
-    with TestClient(app) as client:
+    with create_authenticated_client() as client:
         with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
 
             websocket.send_json(GLOBAL_TEST_MESSAGE)
@@ -228,4 +304,3 @@ def test_get_room_messages_rejects_invalid_limit():
     with TestClient(app) as client:
         response = client.get("/rooms/conversation-1/messages?limit=0")
     assert response.status_code == 422
-
