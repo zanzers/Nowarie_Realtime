@@ -296,7 +296,7 @@ The script automates branch creation, committing, pushing, pull-request creation
 
 * [x] Implement authentication and trusted user identity.
 * [x] Authorize room membership.
-* [ ] Improve connection lifecycle and error handling.
+* [x] Improve connection lifecycle and error handling.
 * [ ] Handle reconnecting clients and missed messages.
 
 ### Phase 4 — Shared Real-Time Infrastructure
