@@ -1,12 +1,12 @@
 import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, HTTPException
 from pydantic import ValidationError
 
 from app.lib.lib_Main import savedMessage
 from app.connection_manager import ConnectionManager
 from app.db.schemas.schemas import MessageEvent, IncomingMessage
 from app.core.config import ( JWT_PUBLIC_KEY, JWT_ISSUER, JWT_AUDIENCE )
-from app.core.security import ( AuthenticationError, verify_access_token )
+from app.core.security import ( AuthenticationError, verify_access_token, authenticated_user )
 from app.db.message_repository import get_messages
 from app.db.room_repository import is_room_member
 
@@ -31,7 +31,14 @@ async def health_check():
     }
 
 @app.get("/rooms/{room_id}/messages")
-async def get_room_messages(room_id: str, limit: int = Query(default=50, ge=1, le=100)):
+async def get_room_messages(room_id: str, request: Request, limit: int = Query(default=50, ge=1, le=100)):
+
+    authenticated_user_id = authenticated_user(request)
+
+    if not is_room_member(room_id, authenticated_user_id):
+        raise HTTPException( status_code=403, detail="You are not a member of this room.")
+
+
     messages = get_messages(room_id, limit)
     return {
         "room_id": room_id,
