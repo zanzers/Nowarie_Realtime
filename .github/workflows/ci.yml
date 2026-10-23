@@ -30,6 +30,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      
+      - name: Generate test JWT keys
+        run: |
+          openssl genrsa -out app/lib/test_private.pem 2048
+          openssl rsa -in app/lib/test_private.pem -pubout -out app/lib/test_public.pem
 
       - name: Run tests
         run: python -m pytest
