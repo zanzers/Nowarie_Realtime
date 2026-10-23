@@ -42,6 +42,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest-timeout
 
       - name: Create database tables
         run: |
@@ -51,10 +56,6 @@ jobs:
           JWT_ISSUER: nowarie-test
           JWT_AUDIENCE: nowarie-realtime
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest-timeout
       
       - name: Generate test JWT keys
         run: |
