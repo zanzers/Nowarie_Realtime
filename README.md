@@ -294,8 +294,8 @@ The script automates branch creation, committing, pushing, pull-request creation
 
 ### Phase 3 — Identity and Reliability
 
-* [ ] Implement authentication and trusted user identity.
-* [ ] Authorize room membership.
+* [x] Implement authentication and trusted user identity.
+* [x] Authorize room membership.
 * [ ] Improve connection lifecycle and error handling.
 * [ ] Handle reconnecting clients and missed messages.
 
