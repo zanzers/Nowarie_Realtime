@@ -40,5 +40,5 @@ jobs:
         run: python -m pytest
         env:
           DATABASE_URL: sqlite:///./test.db
-          JWT_ISSUER: your-issuer-value
-          JWT_AUDIENCE: your-audience-value
+          JWT_ISSUER: nowarie-test
+          JWT_AUDIENCE: nowarie-realtime
