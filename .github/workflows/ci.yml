@@ -16,9 +16,6 @@ jobs:
   check:
     runs-on: ubuntu-latest
 
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nowarie_realtime
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -34,9 +31,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify database configuration
-        run: |
-          python -c "import os; print('DATABASE_URL configured:', bool(os.getenv('DATABASE_URL')))"
-
       - name: Run tests
         run: python -m pytest
+        env:
+          DATABASE_URL: sqlite:///./test.db
