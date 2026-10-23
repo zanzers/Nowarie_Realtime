@@ -13,3 +13,11 @@ class Message(Base):
     sender: Mapped[str] = mapped_column(String(100), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+
+class RoomMember(Base):
+    __tablename__ = "room_members"
+
+    room_id: Mapped[str] = mapped_column( String(100), primary_key=True)
+    user_id: Mapped[str] = mapped_column( String(100), primary_key=True)

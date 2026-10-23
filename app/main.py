@@ -8,6 +8,7 @@ from app.db.schemas.schemas import MessageEvent, IncomingMessage
 from app.core.config import ( JWT_PUBLIC_KEY, JWT_ISSUER, JWT_AUDIENCE )
 from app.core.security import ( AuthenticationError, verify_access_token )
 from app.db.message_repository import get_messages
+from app.db.room_repository import is_room_member
 
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,20 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
         return
     
     authenticated_user_id = claims["sub"]
+
+    try:
+        allowed = is_room_member(room_id, authenticated_user_id)
+    except Exception:
+        logger.exception("Failed to check room membership for user %s in room %s", authenticated_user_id, room_id)
+
+        await websocket.close(code=1011, reason="Server error while checking room access.")
+        return
+    
+    if not allowed:
+        await websocket.close(code=1008, reason="You are not a member of this room.")
+        return
+
+
     await manager.connect(websocket, room_id)
     logger.info("Authenticated use %s connected to room %s", authenticated_user_id, room_id)
 

@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 from datetime import datetime, timedelta, timezone
 from app.connection_manager import ConnectionManager
 from starlette.websockets import WebSocketDisconnect
+from starlette.testclient import WebSocketDenialResponse
 from tests.test_global import GLOBAL_TEST_MESSAGE, INVALID_MESSAGE, INVALID_ERROR, WEBSOCKET_CONNECT_ROOM, CLIENT_TIMESTAMP,CLIENT_OWN_ID,ERROR_MESSAGE
 
 
@@ -54,7 +55,8 @@ def test_health_check():
     }
 
 
-def test_websocket_rooms_are_separated():
+@patch("app.main.is_room_member", return_value=True)
+def test_websocket_rooms_are_separated(mock_is_room_member):
     with create_authenticated_client() as client:
         with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-1"]) as websocket_a: 
             with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-2"]) as websocket_b:
@@ -75,7 +77,8 @@ def test_websocket_rooms_are_separated():
                 assert response_b["content"] == "Message from conversation-2"
                 assert response_b["sender"] == "user-123"
 
-def test_websocket_broadcast_within_room():
+@patch("app.main.is_room_member", return_value=True)
+def test_websocket_broadcast_within_room(mock_is_room_member):
     with TestClient(app) as client:
 
         token = create_test_token()
@@ -96,8 +99,9 @@ def test_websocket_broadcast_within_room():
                 assert response_a["content"] == GLOBAL_TEST_MESSAGE["content"]
                 assert "timestamp" in response_a
                 assert response_b == response_a
-             
-def test_websocket_does_not_broadcast_when_persistence_fails():
+
+@patch("app.main.is_room_member", return_value=True)     
+def test_websocket_does_not_broadcast_when_persistence_fails(mock_is_room_member):
 
     with patch("app.lib.lib_Main.persist_message_with_retry", new_callable=AsyncMock, return_value=False), patch("app.connection_manager.ConnectionManager.broadcast", new_callable=AsyncMock) as broadcast:
         with create_authenticated_client() as client:
@@ -153,7 +157,8 @@ def test_broadcast_does_not_send_to_other_rooms():
     client_b.send_json.assert_awaited_once_with(message)
     client_c.send_json.assert_not_awaited()
 
-def test_websocket_rejects_invalid_message():
+@patch("app.main.is_room_member", return_value=True)  
+def test_websocket_rejects_invalid_message(mock_is_room_member):
     with create_authenticated_client() as client:
         with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
             websocket.send_json(INVALID_MESSAGE)
@@ -192,9 +197,43 @@ def test_websocket_rejects_invalid_token():
         assert exc_info.value.code == 1008
         assert exc_info.value.reason == "Invalid access token."
 
+@patch("app.main.is_room_member", return_value=True)  
+def test_websocket_allows_room_member(mock_is_room_member):
+    with create_authenticated_client() as client:
+        with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-1"]) as websocket:
+            websocket.send_json(GLOBAL_TEST_MESSAGE)
+            response = websocket.receive_json()
+
+            assert response["type"] == GLOBAL_TEST_MESSAGE["type"]
+            assert response["sender"] == "user-123"
+
+    mock_is_room_member.assert_called_once_with("conversation-1", "user-123")
+
+@patch("app.main.is_room_member", return_value=False)  
+def test_websocket_rejects_non_member(mock_is_room_member):
+    with create_authenticated_client() as client:
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-1"]): pass
+
+    mock_is_room_member.assert_called_once_with("conversation-1", "user-123")
+
+
+@patch("app.main.is_room_member", side_effect=RuntimeError("Database unavailable"))  
+def test_websocket_rejects_when_room_check_fails(mock_is_room_member):
+    with create_authenticated_client() as client:
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-1"]): pass
+
+    assert exc_info.value.code == 1011
+
+    mock_is_room_member.assert_called_once_with("conversation-1", "user-123")
+
+
+
 # TIMESTAMP #####################################################
 
-def test_websocket_generates_server_timestamp():
+@patch("app.main.is_room_member", return_value=True)  
+def test_websocket_generates_server_timestamp(mock_is_room_member):
     with create_authenticated_client() as client:
         with client.websocket_connect(
             WEBSOCKET_CONNECT_ROOM["validation-test"]
@@ -209,7 +248,8 @@ def test_websocket_generates_server_timestamp():
             assert "timestamp" in response
             assert response["timestamp"].endswith("+00:00") or response["timestamp"].endswith("Z")
 
-def test_websocket_rejects_cliet_timestamp():
+@patch("app.main.is_room_member", return_value=True)  
+def test_websocket_rejects_cliet_timestamp(mock_is_room_member):
     with create_authenticated_client() as client:
         with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
         
@@ -222,7 +262,8 @@ def test_websocket_rejects_cliet_timestamp():
 
 # MESSAGE ID #############################
 
-def test_websocket_generate_server_message_id():
+@patch("app.main.is_room_member", return_value=True)  
+def test_websocket_generate_server_message_id(mock_is_room_member):
     with create_authenticated_client() as client:
         with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
             
@@ -233,7 +274,8 @@ def test_websocket_generate_server_message_id():
             assert len(response['id']) == 32
             assert all(character in "0123456789abcdef" for character in response["id"])
 
-def test_websocket_rejects_client_message_id():
+@patch("app.main.is_room_member", return_value=True)  
+def test_websocket_rejects_client_message_id(mock_is_room_member):
     with create_authenticated_client() as client:
         with client.websocket_connect( WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
         
@@ -243,7 +285,8 @@ def test_websocket_rejects_client_message_id():
             assert response["type"] == "error"
             assert response["content"] == "Invalid message format."
 
-def test_websocket_generates_unique_message_ids():
+@patch("app.main.is_room_member", return_value=True)  
+def test_websocket_generates_unique_message_ids(mock_is_room_member):
     with create_authenticated_client() as client:
         with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
 
