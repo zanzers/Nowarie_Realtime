@@ -1,3 +1,12 @@
+
+
+
+
+
+
+
+
+
 GLOBAL_TEST_MESSAGE = {
     "type": "chat.message",
     "content": "Hello nowarie"

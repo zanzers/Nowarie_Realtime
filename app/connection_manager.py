@@ -1,4 +1,7 @@
+import logging
 from fastapi import WebSocket
+
+logger = logging.getLogger(__name__)
 
 class ConnectionManager:
     def __init__(self):
@@ -21,12 +24,15 @@ class ConnectionManager:
             if not connections:
                 del self.active_connections[room_id]
     
-    async def broadcast(self, message: str, room_id: str):
+
+
+    async def broadcast(self, message: dict, room_id: str):
         connections = self.active_connections.get(room_id, [])
 
         for connection in connections.copy():
             try:
                 await connection.send_json(message)
             except Exception:
+                logger.exception("Failed to deliver message to a connection in room %s", room_id)
                 self.disconnection(connection, room_id)
 

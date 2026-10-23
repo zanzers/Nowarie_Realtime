@@ -54,7 +54,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
         return
     
     if not JWT_PUBLIC_KEY or not JWT_ISSUER or not JWT_AUDIENCE:
-        logger.error("JTW configuration is missing.")
+        logger.error("JWT configuration is missing.")
         await websocket.close(
             code=1011,
             reason="Server configuration error.")
@@ -83,7 +83,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
 
 
     await manager.connect(websocket, room_id)
-    logger.info("Authenticated use %s connected to room %s", authenticated_user_id, room_id)
+    logger.info("Authenticated user %s connected to room %s", authenticated_user_id, room_id)
 
 
 
@@ -107,6 +107,14 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
 
     except WebSocketDisconnect:
         logger.info("User %s disconnected from room %s ",authenticated_user_id, room_id)
+
+    except Exception:
+        logger.exception("Unexpected Websocket error for user %s in room %s", authenticated_user_id, room_id)
+
+    try:
+        await websocket.close(code=1011, reason="Internal server error.")
+    except Exception:
+        logger.warning("Could not close Websocket for user %s in room %s", authenticated_user_id, room_id)
 
     finally:
         manager.disconnection(websocket, room_id)
