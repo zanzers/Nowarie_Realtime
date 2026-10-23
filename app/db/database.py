@@ -17,10 +17,12 @@ def get_database_url() -> str:
 
 DATABASE_URL = get_database_url()
 
+connect_args = {} if DATABASE_URL.startswith("sqlite") else {"connect_timeout": 5}
+
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
-    connect_args={"connect_timeout": 5}
+    connect_args=connect_args
 )
 
 SessionLocal = sessionmaker(
