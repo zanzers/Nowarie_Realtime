@@ -4,10 +4,10 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 
-from app.db.message_repository import save_message, get_messages
 from tests.test_global import GLOBAL_TEST_MESSAGE
 from app.db.schemas.schemas import MessageEvent
 from datetime import datetime, timezone
+from app.db.message_repository import save_message, get_messages, get_messages_after, UnknownMessageError, _to_event
 
 
 @pytest.fixture
@@ -146,3 +146,48 @@ def test_existing_message_with_different_timestamp_raises(message):
     mock_session.add.assert_not_called()
     mock_session.commit.assert_not_called()
 
+
+def test_get_messages_after_filters_and_orders_by_seq():
+    session = MagicMock()
+    session.scalar.return_value = 42
+    session.scalars.return_value.all.return_value = []
+    with patch("app.db.message_repository.SessionLocal") as session_local:
+        session_local.return_value.__enter__.return_value = session
+        get_messages_after("conversation-1", "a" * 32, limit=10)
+    statement = session.scalars.call_args.args[0]
+    assert "seq >" in str(statement)
+    assert statement._limit_clause.value == 10
+
+def test_get_messages_after_unknown_cursor_raises():
+    session = MagicMock()
+    session.scalar.return_value = None
+    with patch("app.db.message_repository.SessionLocal") as session_local:
+        session_local.return_value.__enter__.return_value = session
+        with pytest.raises(UnknownMessageError):
+            get_messages_after("conversation-1", "a" * 32)
+
+def test_to_event_maps_database_row_to_message_event():
+    message_id = uuid.uuid4()
+    created_at = datetime(2026, 10, 24, 10, 0, tzinfo=timezone.utc)
+    row = make_message("conversation-1", "alice", "Hello!", created_at)
+    row.id = message_id
+
+    event = _to_event(row)
+
+    assert event.type == "chat.message"
+    assert event.id == message_id.hex
+    assert event.sender == "alice"
+    assert event.content == "Hello!"
+    assert event.timestamp == created_at
+
+
+def test_to_event_serializes_id_as_32_char_hex():
+    row = make_message(
+        "conversation-1", "alice", "Hi",
+        datetime(2026, 10, 24, 10, 0, tzinfo=timezone.utc),
+    )
+
+    payload = _to_event(row).model_dump(mode="json")
+
+    assert len(payload["id"]) == 32
+    assert "-" not in payload["id"]

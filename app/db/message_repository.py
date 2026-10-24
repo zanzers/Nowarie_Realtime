@@ -4,6 +4,17 @@ from app.db.database import SessionLocal
 from app.db.models import Message
 from app.db.schemas.schemas import MessageEvent
 
+class UnknownMessageError(Exception):
+    pass
+
+def _to_event(message: Message) -> MessageEvent:
+    return MessageEvent(
+        type="chat.message",
+        id=message.id.hex,
+        sender=message.sender,
+        content=message.content,
+        timestamp=message.created_at
+    )
 
 def save_message(message: MessageEvent, room_id: str) -> None:
     message_id = uuid.UUID(hex=message.id)
@@ -54,4 +65,24 @@ def get_messages(room_id: str, limit: int = 50) -> list[MessageEvent]:
             for message in reversed(messages)
         ]
 
+def get_messages_after(room_id: str, after_id: str, limit: int = 100) -> list[MessageEvent]:
+    with SessionLocal() as session:
+        anchor_seq = session.scalar(
+            select(Message.seq).where(
+                Message.id == uuid.UUID(hex=after_id),
+                Message.room_id == room_id,
+            )
+        )
+
+        if anchor_seq is None:
+            raise UnknownMessageError(after_id)
+
+        statement = (
+            select(Message)
+            .where(Message.room_id == room_id, Message.seq > anchor_seq)
+            .order_by(Message.seq.asc())
+            .limit(limit)
+        )
+
+        return [_to_event(m) for m in session.scalars(statement).all()]
 

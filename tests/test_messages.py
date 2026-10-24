@@ -6,7 +6,7 @@ from unittest.mock import patch
 from app.core.security import AuthenticationError
 from tests.test_global import GLOBAL_TEST_MESSAGE,  WEBSOCKET_CONNECT_ROOM ,CLIENT_OWN_ID
 
-
+from app.db.message_repository import UnknownMessageError
 
 
 from tests.test_lib import *
@@ -170,3 +170,32 @@ def test_authenticated_user_returns_subject():
         response = client.get( "/rooms/conversation-1/messages")
 
     assert response.status_code == 200
+
+
+def test_get_room_messages_after_id_uses_cursor():
+    with patch("app.main.is_room_member", return_value=True), \
+         patch("app.main.get_messages_after", return_value=[]) as mock_after:
+        with create_authenticated_client() as client:
+            response = client.get(f"/rooms/conversation-1/messages?after_id={'a'*32}&limit=20")
+    assert response.status_code == 200
+    mock_after.assert_called_once_with("conversation-1", "a" * 32, 20)
+
+def test_get_room_messages_after_unknown_id_returns_404():
+    with patch("app.main.is_room_member", return_value=True), \
+         patch("app.main.get_messages_after", side_effect=UnknownMessageError("x")):
+        with create_authenticated_client() as client:
+            response = client.get(f"/rooms/conversation-1/messages?after_id={'a'*32}")
+    assert response.status_code == 404
+
+def test_get_room_messages_after_rejects_malformed_id():
+    with create_authenticated_client() as client:
+        response = client.get("/rooms/conversation-1/messages?after_id=not-hex")
+    assert response.status_code == 422
+
+def test_get_room_messages_after_id_rejects_non_member():
+    with patch("app.main.is_room_member", return_value=False), \
+         patch("app.main.get_messages_after") as mock_after:
+        with create_authenticated_client() as client:
+            response = client.get(f"/rooms/conversation-1/messages?after_id={'a'*32}")
+    assert response.status_code == 403
+    mock_after.assert_not_called()

@@ -7,7 +7,7 @@ from app.connection_manager import ConnectionManager
 from app.db.schemas.schemas import MessageEvent, IncomingMessage
 from app.core.config import ( JWT_PUBLIC_KEY, JWT_ISSUER, JWT_AUDIENCE )
 from app.core.security import ( AuthenticationError, verify_access_token, authenticated_user )
-from app.db.message_repository import get_messages
+from app.db.message_repository import get_messages, get_messages_after, UnknownMessageError
 from app.db.room_repository import is_room_member
 
 
@@ -31,22 +31,25 @@ async def health_check():
     }
 
 @app.get("/rooms/{room_id}/messages")
-async def get_room_messages(room_id: str, request: Request, limit: int = Query(default=50, ge=1, le=100)):
+async def get_room_messages(room_id: str, request: Request, limit: int = Query(default=50, ge=1, le=100), after_id: str | None = Query(default=None, pattern=r"^[0-9a-f]{32}$")):
 
     authenticated_user_id = authenticated_user(request)
 
     if not is_room_member(room_id, authenticated_user_id):
         raise HTTPException( status_code=403, detail="You are not a member of this room.")
+    
+    if after_id is None:
+        messages = get_messages(room_id, limit)
+    else:
+        try:
+            messages = get_messages_after(room_id, after_id, limit)
+        except UnknownMessageError:
+            raise HTTPException(
+                status_code=404,
+                detail="Unknown message cursor."
+            )
 
-
-    messages = get_messages(room_id, limit)
-    return {
-        "room_id": room_id,
-        "messages": messages,
-    }
-
-
-
+    return { "room_id": room_id, "messages": messages,}
 
 
 @app.websocket("/ws")
@@ -118,10 +121,10 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
     except Exception:
         logger.exception("Unexpected Websocket error for user %s in room %s", authenticated_user_id, room_id)
 
-    try:
-        await websocket.close(code=1011, reason="Internal server error.")
-    except Exception:
-        logger.warning("Could not close Websocket for user %s in room %s", authenticated_user_id, room_id)
+        try:
+            await websocket.close(code=1011, reason="Internal server error.")
+        except Exception:
+            logger.warning("Could not close Websocket for user %s in room %s", authenticated_user_id, room_id)
 
     finally:
         manager.disconnection(websocket, room_id)
