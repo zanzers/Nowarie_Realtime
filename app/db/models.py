@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import DateTime, String, Text, BigInteger, Identity
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.database import Base
@@ -13,6 +13,7 @@ class Message(Base):
     sender: Mapped[str] = mapped_column(String(100), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    seq: Mapped[int] = mapped_column(BigInteger, Identity(), nullable=False)
 
 
 
