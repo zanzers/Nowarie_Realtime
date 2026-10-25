@@ -11,11 +11,11 @@ logger = logging.getLogger(__name__)
 MAX_ATTEMPTS = 5
 RETRY_DELAY = 1
 
-async def persist_message_with_retry(message: MessageEvent, room_id: str) -> bool:
+async def persist_message_with_retry(message: MessageEvent, room_id: str) -> MessageEvent | None:
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
-            await run_in_threadpool(save_message, message, room_id)
+            return await run_in_threadpool(save_message, message, room_id)
             return True
             
         except Exception :
