@@ -22,13 +22,12 @@ async def persist_message_with_retry(message: MessageEvent, room_id: str) -> boo
             logger.exception("Failed to persist message %s (attempt %s %s)", message.id, attempt, MAX_ATTEMPTS,)
             
             if attempt == MAX_ATTEMPTS:
-                return False
-            
-            delay = RETRY_DELAY * (2 ** (attempt - 1))
-            await asyncio.sleep(delay)
+                return None
+        
+            await asyncio.sleep(RETRY_DELAY * (2 ** (attempt - 1)))
 
     
-    return False
+    return None
 
 
 

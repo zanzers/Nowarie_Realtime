@@ -1,5 +1,6 @@
 import uuid
 from sqlalchemy import select, desc
+from sqlalchemy.exc import IntegrityError
 from app.db.database import SessionLocal
 from app.db.models import Message
 from app.db.schemas.schemas import MessageEvent
@@ -13,34 +14,62 @@ def _to_event(message: Message) -> MessageEvent:
         id=message.id.hex,
         sender=message.sender,
         content=message.content,
-        timestamp=message.created_at
+        timestamp=message.created_at,
+        client_message_id=message.client_message_id
     )
 
-def save_message(message: MessageEvent, room_id: str) -> None:
+def _find_by_client_id(session, room_id: str, sender: str, client_message_id: str):
+    return session.scalar(
+        select(Message).where(
+            Message.room_id == room_id,
+            Message.sender == sender,
+            Message.client_message_id == client_message_id,
+        )
+    )
+   
+
+def save_message(message: MessageEvent, room_id: str) -> MessageEvent:
     message_id = uuid.UUID(hex=message.id)
 
     with SessionLocal() as session:
-        existing_message = session.scalar(
-            select(Message).where(Message.id == message_id)
-        )
+        existing_message = session.scalar( select(Message).where(Message.id == message_id))
 
         if existing_message is not None:
-            if( existing_message.room_id != room_id or existing_message.sender != message.sender or existing_message.content != message.content or existing_message.created_at != message.timestamp):
+            if( existing_message.room_id != room_id or existing_message.sender != message.sender or existing_message.content != message.content or existing_message.created_at != message.timestamp or existing_message.client_message_id != message.client_message_id):
 
                 raise ValueError("Message ID already exists with different content.")
             
-            return
+            return _to_event(existing_message)
+
+        if message.client_message_id is not None:
+            duplicate = _find_by_client_id(session, room_id, message.sender, message.client_message_id)
+            if duplicate is not None:
+                return _to_event(duplicate)
         
-        db_message =  Message(
+        session.add(Message(
             id=message_id,
             room_id=room_id,
             sender=message.sender,
             content=message.content,
-            created_at=message.timestamp
-        )
+            created_at=message.timestamp,
+            client_message_id=message.client_message_id
+        ))
 
-        session.add(db_message)
-        session.commit()
+        try:
+            session.commit()
+        
+        except IntegrityError:
+            session.rollback()
+
+            if message.client_message_id is None:
+                raise
+            duplicate = _find_by_client_id(session, room_id, message.sender, message.client_message_id)
+            
+            if duplicate is None:
+                raise
+            return _to_event(duplicate)
+
+        return message
 
 
 def get_messages(room_id: str, limit: int = 50) -> list[MessageEvent]:

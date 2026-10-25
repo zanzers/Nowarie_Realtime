@@ -36,7 +36,7 @@ async def test_persisted_return_false_after_all_attempts(message):
         ):
         result = await persist_message_with_retry(message, "conversation-1")
         
-    assert result is False
+    assert result is None
     assert save.await_count == MAX_ATTEMPTS
     assert [call.args[0] for call in sleep.await_args_list] == [1, 2, 4, 8]
 
@@ -45,4 +45,4 @@ async def test_returns_false_when_no_attempts_configured(message):
     with patch("app.db.message_delivery.MAX_ATTEMPTS", 0):
         result = await persist_message_with_retry(message, "conversation-1")
 
-    assert result is False
+    assert result is None

@@ -15,10 +15,10 @@ async def savedMessage( websocket: WebSocket ,message: MessageEvent, room_id: st
         saved = await persist_message_with_retry(message, room_id)
     except Exception:
         logger.exception( "Unexpected error while saving message %s", message.id)
-        saved = False
+        saved = None
 
     
-    if not saved:
+    if saved is None:
         await websocket.send_json({
             "type": "error",
             "code": "message_persistence_failed",

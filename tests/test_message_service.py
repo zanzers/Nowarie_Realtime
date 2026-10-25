@@ -29,7 +29,7 @@ async def test_failed_persistence_sends_error_without_broadcast(message):
     websocket = AsyncMock()
     manager = AsyncMock(spec=ConnectionManager)
 
-    with patch("app.lib.lib_Main.persist_message_with_retry", new_callable=AsyncMock, return_value=False):
+    with patch("app.lib.lib_Main.persist_message_with_retry", new_callable=AsyncMock, return_value=None):
         result = await savedMessage(websocket, message, "conversation-1", manager)
     
     assert result is False

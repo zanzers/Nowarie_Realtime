@@ -54,7 +54,7 @@ def authenticated_user(request: Request) -> str:
     authenticated_user_id = claims.get("sub")
 
     if not authenticated_user_id:
-        raise HTTPException( status_code=401, detail="Invalid acccess token.")
+        raise HTTPException( status_code=401, detail="Invalid access token.")
     
     return authenticated_user_id
 

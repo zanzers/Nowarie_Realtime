@@ -1,4 +1,4 @@
-
+import uuid
 from app.main import app, manager
 from fastapi.testclient import TestClient
 from fastapi import HTTPException
@@ -157,7 +157,7 @@ def test_authenticated_user_rejects_missing_subject():
          response = client.get("/rooms/conversation-1/messages")
 
     assert response.status_code == 401
-    assert response.json() == {"detail": "Invalid acccess token."}
+    assert response.json() == {"detail": "Invalid access token."}
 
 
 def test_authenticated_user_returns_subject():
@@ -199,3 +199,14 @@ def test_get_room_messages_after_id_rejects_non_member():
             response = client.get(f"/rooms/conversation-1/messages?after_id={'a'*32}")
     assert response.status_code == 403
     mock_after.assert_not_called()
+
+
+
+@patch("app.main.is_room_member", return_value=True)
+def test_websocket_echoes_client_message_id(mock_is_room_member):
+    payload = {**GLOBAL_TEST_MESSAGE, "client_message_id": uuid.uuid4().hex}
+    with create_authenticated_client() as client:
+        with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["validation-test"]) as websocket:
+            websocket.send_json(payload)
+            response = websocket.receive_json()
+    assert response["client_message_id"] == payload["client_message_id"]

@@ -57,7 +57,7 @@ def test_websocket_broadcast_within_room(mock_is_room_member):
 @patch("app.main.is_room_member", return_value=True)     
 def test_websocket_does_not_broadcast_when_persistence_fails(mock_is_room_member):
 
-    with patch("app.lib.lib_Main.persist_message_with_retry", new_callable=AsyncMock, return_value=False), patch("app.connection_manager.ConnectionManager.broadcast", new_callable=AsyncMock) as broadcast:
+    with patch("app.lib.lib_Main.persist_message_with_retry", new_callable=AsyncMock, return_value=None), patch("app.connection_manager.ConnectionManager.broadcast", new_callable=AsyncMock) as broadcast:
         with create_authenticated_client() as client:
             with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-1"]) as websocket_a:
                 with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-1"]) as websocket_b:
