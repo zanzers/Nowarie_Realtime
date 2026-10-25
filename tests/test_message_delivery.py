@@ -6,12 +6,13 @@ from app.db.message_delivery import persist_message_with_retry, MAX_ATTEMPTS
 from app.db.schemas.schemas import MessageEvent
 from tests.test_global import GLOBAL_TEST_MESSAGE
 
+
 @pytest.fixture
 def message(): return MessageEvent(**GLOBAL_TEST_MESSAGE, sender="user-123")
 
 @pytest.mark.asyncio
 async def test_message_persisted_succeeds_on_first_attempt(message):
-    with patch("app.db.message_delivery.run_in_threadpool", new_callable=AsyncMock) as save:
+    with patch("app.db.message_delivery.run_in_threadpool", new_callable=AsyncMock, return_value=True) as save:
         
         result = await persist_message_with_retry(message, "conversation-1")
         assert result is True
@@ -19,12 +20,12 @@ async def test_message_persisted_succeeds_on_first_attempt(message):
 
 @pytest.mark.asyncio
 async def test_persisted_retries_and_then_succeeds(message):
-    with (patch("app.db.message_delivery.run_in_threadpool", new_callable=AsyncMock, side_effect=[RuntimeError("Temporary database failure"), None],
+    with (patch("app.db.message_delivery.run_in_threadpool", new_callable=AsyncMock, side_effect=[RuntimeError("Temporary database failure"), message],
         ) as save, patch("app.db.message_delivery.asyncio.sleep", new_callable=AsyncMock) as sleep,
         ):
         result = await persist_message_with_retry(message, "conversation-1")
 
-        assert result is True
+        assert result is message
         assert save.await_count == 2
         sleep.assert_awaited_once_with(1)
 
@@ -46,3 +47,11 @@ async def test_returns_false_when_no_attempts_configured(message):
         result = await persist_message_with_retry(message, "conversation-1")
 
     assert result is None
+
+@pytest.mark.asyncio
+async def test_persist_returns_the_message_from_save(message):
+    with patch("app.db.message_delivery.save_message", return_value=message) as save:
+        result = await persist_message_with_retry(message, "conversation-1")
+
+    assert result is message
+    save.assert_called_once()

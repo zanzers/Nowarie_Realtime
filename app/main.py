@@ -2,14 +2,15 @@ import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, HTTPException
 from pydantic import ValidationError
 
-from app.lib.lib_Main import savedMessage
 from app.connection_manager import ConnectionManager
 from app.db.schemas.schemas import MessageEvent, IncomingMessage
 from app.core.config import ( JWT_PUBLIC_KEY, JWT_ISSUER, JWT_AUDIENCE )
 from app.core.security import ( AuthenticationError, verify_access_token, authenticated_user )
 from app.db.message_repository import get_messages, get_messages_after, UnknownMessageError
-from app.db.room_repository import is_room_member
+from app.type.global_Type import INVALID_MESSAGE_ERROR, PERSISTENCE_ERROR
 
+from app.db.room_repository import is_room_member
+from app.services.message_service import process_incoming_message
 
 logger = logging.getLogger(__name__)
 
@@ -101,19 +102,20 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
         while True:
             try:
                 payload = await websocket.receive_json()
-                incoming = IncomingMessage.model_validate(payload)
-                message = MessageEvent(**incoming.model_dump(),sender=authenticated_user_id)
-            
 
-            except (ValueError, ValidationError):
-                await websocket.send_json({
-                    "type": "error",
-                    "code": "invalid_message",
-                    "content": "Invalid message format.",
-                })
+            except ValueError:
+                await websocket.send_json( INVALID_MESSAGE_ERROR )
                 continue
 
-            await savedMessage(websocket, message, room_id, manager)
+            result = await process_incoming_message(
+            payload,
+                authenticated_user_id,
+                room_id,
+                manager
+            )
+
+            if not result.ok:
+                await websocket.send_json(result.error)
 
     except WebSocketDisconnect:
         logger.info("User %s disconnected from room %s ",authenticated_user_id, room_id)

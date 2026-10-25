@@ -51,7 +51,7 @@ def test_disconnection_ignores_unknown_connection():
 
 def test_websocket_cleans_up_after_unexpected_error():
     with patch("app.main.is_room_member", return_value=True), patch(
-        "app.main.savedMessage", new_callable=AsyncMock, side_effect=RuntimeError("Unexpected processing error")):
+        "app.main.process_incoming_message", new_callable=AsyncMock, side_effect=RuntimeError("Unexpected processing error")):
         with create_authenticated_client() as client:
            with client.websocket_connect(WEBSOCKET_CONNECT_ROOM["conversation-1"]) as websocket:
             websocket.send_json(GLOBAL_TEST_MESSAGE)
@@ -69,7 +69,7 @@ def test_websocket_close_failure_logs_warning(caplog):
         raise RuntimeError("WebSocket close failed")
 
     with patch( "app.main.is_room_member", return_value=True,), patch(
-        "app.main.savedMessage", new_callable=AsyncMock, side_effect=RuntimeError("Unexpected processing error"),), patch(
+        "app.main.process_incoming_message", new_callable=AsyncMock, side_effect=RuntimeError("Unexpected processing error"),), patch(
         "starlette.websockets.WebSocket.close", new=close_then_raise,
     ):
         with create_authenticated_client() as client:

@@ -302,17 +302,8 @@ The script automates branch creation, committing, pushing, pull-request creation
 
 ### Phase 4 — Shared Real-Time Infrastructure
 
-* [ ] Separate messaging logic from transport handling where appropriate.
-* [ ] Introduce Redis Pub/Sub when cross-instance event distribution is needed.
-* [ ] Add online presence and typing indicators if required.
+* [x] Separate messaging logic from transport handling where appropriate.
 
-### Phase 5 — Deployment
-
-* [ ] Configure production environment variables.
-* [ ] Deploy the API.
-* [ ] Connect persistent PostgreSQL storage.
-* [ ] Add operational logging and monitoring.
-* [ ] Evaluate hosting costs and reliability before production use.
 
 ## Current Status
 
