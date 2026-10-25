@@ -7,6 +7,7 @@ class IncomingMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: Literal["chat.message"]
     content: str = Field(min_length=1, max_length=2000)
+    client_message_id: str | None = Field(default=None, min_length=1, max_length=64)
     
 
 class MessageEvent(IncomingMessage):

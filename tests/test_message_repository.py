@@ -3,7 +3,7 @@ import uuid
 
 from unittest.mock import MagicMock, patch
 
-
+from sqlalchemy.exc import IntegrityError
 from tests.test_global import GLOBAL_TEST_MESSAGE
 from app.db.schemas.schemas import MessageEvent
 from datetime import datetime, timezone
@@ -23,6 +23,7 @@ def make_message(room_id, sender, content, created_at):
         sender=sender,
         content=content,
         created_at=created_at,
+        client_message_id=None,
     )
 
 
@@ -35,6 +36,7 @@ def make_existing_message(message, room_id):
         sender=message.sender,
         content=message.content,
         created_at=message.timestamp,
+        client_message_id=message.client_message_id
     )
 
 
@@ -191,3 +193,62 @@ def test_to_event_serializes_id_as_32_char_hex():
 
     assert len(payload["id"]) == 32
     assert "-" not in payload["id"]
+
+
+def test_duplicate_client_message_id_returns_stored_message_without_insert():
+    message = MessageEvent(**GLOBAL_TEST_MESSAGE, sender="user-123", client_message_id="abc")
+    stored = make_message("conversation-1", "user-123", "Hello nowarie",
+                          datetime(2026, 10, 24, 10, 0, tzinfo=timezone.utc))
+    stored.client_message_id = "abc"
+
+    session = MagicMock()
+    session.scalar.side_effect = [None, stored]   # not found by id, found by client key
+    with patch("app.db.message_repository.SessionLocal") as session_local:
+        session_local.return_value.__enter__.return_value = session
+        result = save_message(message, "conversation-1")
+
+    assert result.id == stored.id.hex
+    session.add.assert_not_called()
+    session.commit.assert_not_called()
+
+
+def test_integrity_error_on_client_message_id_returns_winner():
+    message = MessageEvent(**GLOBAL_TEST_MESSAGE, sender="user-123", client_message_id="abc")
+    winner = make_message("conversation-1", "user-123", "Hello nowarie",
+                          datetime(2026, 10, 24, 10, 0, tzinfo=timezone.utc))
+    winner.client_message_id = "abc"
+
+    session = MagicMock()
+    session.scalar.side_effect = [None, None, winner]
+    session.commit.side_effect = IntegrityError("insert", {}, Exception("duplicate"))
+    with patch("app.db.message_repository.SessionLocal") as session_local:
+        session_local.return_value.__enter__.return_value = session
+        result = save_message(message, "conversation-1")
+
+    session.rollback.assert_called_once()
+    assert result.id == winner.id.hex
+
+
+def test_integrity_error_without_client_message_id_is_raised(message):
+    session = MagicMock()
+    session.scalar.return_value = None
+    session.commit.side_effect = IntegrityError("insert", {}, Exception("boom"))
+    with patch("app.db.message_repository.SessionLocal") as session_local:
+        session_local.return_value.__enter__.return_value = session
+        with pytest.raises(IntegrityError):
+            save_message(message, "conversation-1")
+
+def test_integrity_error_is_raised_when_no_duplicate_is_found_after_rollback():
+    message = MessageEvent(**GLOBAL_TEST_MESSAGE, sender="user-123", client_message_id="abc")
+
+    session = MagicMock()
+    session.scalar.side_effect = [None, None, None]
+    session.commit.side_effect = IntegrityError("insert", {}, Exception("boom"))
+
+    with patch("app.db.message_repository.SessionLocal") as session_local:
+        session_local.return_value.__enter__.return_value = session
+        with pytest.raises(IntegrityError):
+            save_message(message, "conversation-1")
+
+    session.rollback.assert_called_once()
+    assert session.scalar.call_count == 3
